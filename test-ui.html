@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ProofPulse API Test</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: #0F172A; color: white; }
+        button { padding: 10px 20px; margin: 10px 5px; background: #2563EB; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        button:hover { background: #1d4ed8; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        textarea { width: 100%; padding: 10px; margin: 10px 0; background: #1E293B; color: white; border: 1px solid #475569; border-radius: 5px; }
+        #log { background: #1E293B; padding: 15px; border-radius: 5px; margin-top: 20px; font-family: monospace; font-size: 12px; white-space: pre-wrap; max-height: 400px; overflow-y: auto; }
+        .success { color: #10b981; }
+        .error { color: #ef4444; }
+        .info { color: #3b82f6; }
+    </style>
+</head>
+<body>
+    <h1>ProofPulse API Test</h1>
+    
+    <div>
+        <label>Enter text to analyze:</label>
+        <textarea id="textInput" rows="4" placeholder="The earth is flat">The earth is flat</textarea>
+    </div>
+    
+    <button onclick="testFullFlow()">Test Full Flow</button>
+    <button onclick="clearLog()">Clear Log</button>
+    
+    <div id="log"></div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        const CLIENT_ID = 'test-client-' + Date.now();
+        
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `<div class="${type}">[${timestamp}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+        
+        async function testFullFlow() {
+            const text = document.getElementById('textInput').value.trim();
+            if (!text) {
+                log('Please enter some text', 'error');
+                return;
+            }
+            
+            try {
+                log('========== STARTING FLOW ==========', 'info');
+                log(`Client ID: ${CLIENT_ID}`, 'info');
+                log(`Text: "${text}"`, 'info');
+                
+                // Step 1: Ingest
+                log('Step 1: Calling /ingest...', 'info');
+                const formData = new FormData();
+                formData.append('type', 'text');
+                formData.append('content', text);
+                
+                const ingestResponse = await fetch(`${API_BASE}/ingest`, {
+                    method: 'POST',
+                    headers: {
+                        'x-client-id': CLIENT_ID
+                    },
+                    body: formData
+                });
+                
+                if (!ingestResponse.ok) {
+                    throw new Error(`Ingest failed: ${ingestResponse.statusText}`);
+                }
+                
+                const ingestData = await ingestResponse.json();
+                log(`✓ Ingest successful: ${JSON.stringify(ingestData)}`, 'success');
+                const jobId = ingestData.job_id;
+                
+                // Step 2: Process
+                log(`Step 2: Calling /process with job_id=${jobId}...`, 'info');
+                const processResponse = await fetch(`${API_BASE}/process?job_id=${jobId}`, {
+                    method: 'POST',
+                    headers: {
+                        'x-client-id': CLIENT_ID
+                    }
+                });
+                
+                if (!processResponse.ok) {
+                    throw new Error(`Process failed: ${processResponse.statusText}`);
+                }
+                
+                const processData = await processResponse.json();
+                log(`✓ Process started: ${JSON.stringify(processData)}`, 'success');
+                
+                // Step 3: Poll for status
+                log('Step 3: Polling for status...', 'info');
+                let attempts = 0;
+                const maxAttempts = 30;
+                
+                while (attempts < maxAttempts) {
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    
+                    const statusResponse = await fetch(`${API_BASE}/status?job_id=${jobId}`, {
+                        headers: {
+                            'x-client-id': CLIENT_ID
+                        }
+                    });
+                    
+                    const statusData = await statusResponse.json();
+                    log(`Status: ${statusData.status} - ${statusData.message || 'N/A'}`, 'info');
+                    
+                    if (statusData.status === 'READY') {
+                        log('✓ Processing complete!', 'success');
+                        
+                        // Step 4: Get result
+                        log('Step 4: Fetching result...', 'info');
+                        const resultResponse = await fetch(`${API_BASE}/result?job_id=${jobId}`, {
+                            headers: {
+                                'x-client-id': CLIENT_ID
+                            }
+                        });
+                        
+                        const resultData = await resultResponse.json();
+                        log(`✓ Result: ${JSON.stringify(resultData, null, 2)}`, 'success');
+                        log('========== FLOW COMPLETED ==========', 'success');
+                        return;
+                    }
+                    
+                    if (statusData.status === 'FAILED') {
+                        throw new Error(`Processing failed: ${statusData.message}`);
+                    }
+                    
+                    attempts++;
+                }
+                
+                throw new Error('Timeout waiting for result');
+                
+            } catch (error) {
+                log(`✗ ERROR: ${error.message}`, 'error');
+                log('========== FLOW FAILED ==========', 'error');
+                console.error(error);
+            }
+        }
+        
+        log('Ready to test. Click "Test Full Flow" button.', 'info');
+    </script>
+</body>
+</html>

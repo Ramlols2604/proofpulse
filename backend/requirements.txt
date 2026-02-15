@@ -1,0 +1,34 @@
+# FastAPI and ASGI Server
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# Pydantic for data validation
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Redis/Valkey client
+redis==5.0.1
+
+# HTTP client for async requests
+httpx>=0.27.0
+
+# Backboard SDK
+backboard-sdk
+
+# PDF text extraction
+PyPDF2==3.0.1
+
+# Web scraping
+beautifulsoup4==4.12.3
+requests==2.31.0
+lxml==5.1.0
+
+# Google Gemini API
+google-generativeai==0.3.2
+
+# Environment variables
+python-dotenv==1.0.0
+
+# Utilities
+python-dateutil==2.8.2

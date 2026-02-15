@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  # Backend FastAPI Service
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - TWELVELABS_API_KEY=${TWELVELABS_API_KEY}
+      - BACKBOARD_API_KEY=${BACKBOARD_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - VALKEY_URL=redis://valkey:6379
+    volumes:
+      - ./uploads:/app/uploads
+      - .:/app
+    depends_on:
+      - valkey
+    networks:
+      - proofpulse-network
+    restart: unless-stopped
+
+  # Valkey (Redis-compatible) Cache
+  valkey:
+    image: valkey/valkey:latest
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey-data:/data
+    networks:
+      - proofpulse-network
+    restart: unless-stopped
+    command: valkey-server --save 60 1 --loglevel warning
+
+volumes:
+  valkey-data:
+    driver: local
+
+networks:
+  proofpulse-network:
+    driver: bridge
