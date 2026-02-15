@@ -6,10 +6,10 @@ from typing import Optional
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
-    # External API Keys
-    TWELVELABS_API_KEY: str
-    BACKBOARD_API_KEY: str
-    GEMINI_API_KEY: str
+    # External API Keys (optional for server start; pipeline will fail with clear error if missing)
+    TWELVELABS_API_KEY: str = ""
+    BACKBOARD_API_KEY: str = ""
+    GEMINI_API_KEY: str = ""
     BACKBOARD_BASE_URL: str = "https://api.backboard.io"
     GEMINI_MODEL: str = "gemini-2.0-flash"
     
@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "uploads"
     
     # CORS
-    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:3001", "http://localhost:5173"]
+    CORS_ORIGINS: list[str] = ["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:5173"]
     
     class Config:
         env_file = ".env"

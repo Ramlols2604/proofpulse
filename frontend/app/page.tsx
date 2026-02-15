@@ -14,42 +14,37 @@ export default function Home() {
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 py-12 px-4">
-      <div className="max-w-6xl mx-auto">
+    <main className="min-h-screen bg-gradient-to-br from-slate-900 via-indigo-950 to-purple-950 text-gray-100 py-12 px-4">
+      <div className="max-w-6xl mx-auto min-h-screen flex flex-col">
         {/* Header */}
-        <div className="text-center mb-12 relative">
-          {/* Settings Button */}
+        <div className="text-center mb-10 relative flex-shrink-0">
           <button
             onClick={() => setSettingsOpen(true)}
-            className="absolute top-0 right-0 bg-white text-gray-700 px-4 py-2 rounded-lg font-medium hover:bg-gray-100 transition-colors shadow-md flex items-center gap-2"
+            className="absolute top-0 right-0 bg-slate-800/80 text-slate-300 px-4 py-2 rounded-lg font-medium hover:bg-slate-700 hover:text-white transition-colors border border-slate-600/50 flex items-center gap-2"
           >
             <span>⚙️</span>
             <span>Settings</span>
           </button>
-
-          <h1 className="text-5xl font-bold text-gray-900 mb-4">
+          <h1 className="text-5xl font-bold mb-2 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
             ProofPulse
           </h1>
-          <p className="text-xl text-gray-600">
-            Real-Time AI Claim Verification
-          </p>
-          <p className="text-sm text-gray-500 mt-2">
-            Upload video, text, links, PDF, or TXT to verify factual claims
-          </p>
+          <p className="text-xl text-slate-400">Real-Time Claim Verifier</p>
         </div>
 
         {/* Input Form */}
         {!results && (
-          <InputForm 
-            onJobCreated={setJobId} 
-            onResults={setResults}
-          />
+          <div className="flex-1 flex flex-col items-center justify-center">
+            <InputForm
+              onJobCreated={setJobId}
+              onResults={setResults}
+            />
+          </div>
         )}
 
         {/* Results View */}
         {results && (
-          <ResultsView 
-            results={results} 
+          <ResultsView
+            results={results}
             onReset={() => {
               setResults(null);
               setJobId(null);

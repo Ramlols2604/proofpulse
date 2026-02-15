@@ -17,7 +17,6 @@ from models import (
 )
 from scoring import finalize_claim_score, map_score_to_verdict
 from integrations.backboard import extract_claims, verify_claim, score_claim_backboard_fallback
-from integrations.gemini import review_and_score_claim
 from config import settings
 from extractors.video import extract_from_video
 from extractors.url import extract_from_url
@@ -295,84 +294,10 @@ async def stage_3_evidence_retrieval(job_id: str) -> None:
 # ============================================================================
 
 async def stage_4_gemini_review(job_id: str) -> None:
-    """Get Gemini rubric scores for each claim (or Backboard fallback if disabled)."""
-    
-    # Get client_id and their settings
-    client_id = cache.get_job_data(job_id, "client_id")
-    user_settings = cache.get_settings(client_id) if client_id else {}
-    gemini_enabled = user_settings.get("gemini_enabled", settings.GEMINI_ENABLED)
-    
-    # Check if Gemini is enabled for this user
-    if not gemini_enabled:
-        cache.set_job_status(job_id, "GEMINI_REVIEW", "Stage 4/5: Scoring claims...")
-        print(f"[{job_id}] Stage 4: Gemini disabled for user, using Backboard fallback")
-        await stage_4_backboard_fallback_scoring(job_id)
-        return
-    
-    cache.set_job_status(job_id, "GEMINI_REVIEW", "Stage 4/5: Scoring claims...")
-    
-    # Get data
-    normalized_text = cache.get_job_data(job_id, "text")
-    claims = cache.get_job_data(job_id, "claims")
-    evidence_results = cache.get_job_data(job_id, "evidence")
-    
-    gemini_results = {}
-    
-    for claim in claims:
-        claim_id = claim["claim_id"]
-        
-        # Check cache
-        if cache.cache_exists(job_id, f"gemini:{claim_id}"):
-            gemini_results[claim_id] = cache.get_job_data(job_id, f"gemini:{claim_id}")
-            continue
-        
-        # Get evidence for this claim
-        evidence = evidence_results.get(claim_id, {})
-        
-        # Extract context snippet (first 500 chars for now)
-        context_snippet = normalized_text[:500]
-        
-        # Call Gemini (with fallback on failure)
-        try:
-            gemini_response = await review_and_score_claim(
-                claim_text=claim["claim_text"],
-                context_text=context_snippet,
-                backboard_verdict=evidence.get("backboard_verdict", "UNCLEAR"),
-                backboard_confidence=evidence.get("backboard_confidence", 50),
-                sources=evidence.get("sources", [])
-            )
-            
-            # Check if Gemini returned an error/fallback response
-            if "API error" in gemini_response.get("short_explanation", ""):
-                # Gemini failed, use Backboard fallback
-                print(f"[{job_id}] Gemini failed for claim {claim_id}, using Backboard fallback")
-                gemini_response = await score_claim_backboard_fallback(
-                    claim_text=claim["claim_text"],
-                    backboard_verdict=evidence.get("backboard_verdict", "UNCLEAR"),
-                    backboard_confidence=evidence.get("backboard_confidence", 50),
-                    sources=evidence.get("sources", [])
-                )
-            
-            # Store per-claim Gemini result
-            cache.set_job_data(job_id, f"gemini:{claim_id}", gemini_response)
-            gemini_results[claim_id] = gemini_response
-        
-        except Exception as e:
-            # On any Gemini error, fall back to Backboard
-            print(f"[{job_id}] Gemini exception for claim {claim_id}: {str(e)}, using Backboard fallback")
-            gemini_response = await score_claim_backboard_fallback(
-                claim_text=claim["claim_text"],
-                backboard_verdict=evidence.get("backboard_verdict", "UNCLEAR"),
-                backboard_confidence=evidence.get("backboard_confidence", 50),
-                sources=evidence.get("sources", [])
-            )
-            cache.set_job_data(job_id, f"gemini:{claim_id}", gemini_response)
-            gemini_results[claim_id] = gemini_response
-    
-    cache.set_job_data(job_id, "gemini_report", gemini_results)
-    cache.set_job_status(job_id, "GEMINI_READY", f"Gemini scored {len(claims)} claims")
-    
-    print(f"[{job_id}] Stage 4: Gemini scored {len(claims)} claims")
+    """Score claims using Backboard SDK only (verdict and rubric). Gemini is not used."""
+    cache.set_job_status(job_id, "GEMINI_REVIEW", "Stage 4/5: Scoring claims (Backboard)...")
+    print(f"[{job_id}] Stage 4: Using Backboard SDK for verdict and scoring")
+    await stage_4_backboard_fallback_scoring(job_id)
 
 
 async def stage_4_backboard_fallback_scoring(job_id: str) -> None:
@@ -438,9 +363,9 @@ async def stage_5_finalize_scoring(job_id: str) -> None:
     cache.set_job_status(job_id, "SCORING", "Stage 5/5: Generating report...")
     debug_log(job_id, "STAGE 5 START", "Beginning final scoring")
     
-    # Get all data
+    # Get all data (include transcript text from Stage 1 / TwelveLabs)
     data = cache.get_multiple(job_id, [
-        "type", "created_at", "timestamps",
+        "type", "created_at", "timestamps", "text",
         "claims", "evidence", "gemini_report"
     ])
     
@@ -475,27 +400,40 @@ async def stage_5_finalize_scoring(job_id: str) -> None:
                 backboard_verdict=evidence.get("backboard_verdict", "UNCLEAR")
             )
             
-            # CRITICAL: Final verdict MUST come from score mapping, not from verdict fields
-            final_verdict = map_score_to_verdict(final_breakdown.final_score)
-            
+            # Verdict from Backboard SDK only (from verify_claim)
+            backboard_verdict_raw = evidence.get("backboard_verdict")
+            if backboard_verdict_raw and str(backboard_verdict_raw).upper() in ("SUPPORTED", "MOSTLY_SUPPORTED", "UNCLEAR", "MOSTLY_CONTRADICTED", "CONTRADICTED"):
+                final_verdict = str(backboard_verdict_raw).upper()
+            else:
+                final_verdict = map_score_to_verdict(final_breakdown.final_score)
+
             debug_log(job_id, f"STAGE 5.{idx} SCORING", "Backend scoring complete", {
                 "base_points": final_breakdown.base_points,
                 "multiplier": final_breakdown.agreement_multiplier,
                 "final_score": final_breakdown.final_score,
-                "final_verdict": final_verdict
+                "final_verdict": final_verdict,
             })
-            
+
+            # Explanation: from Backboard short_explanation or Backboard rationale from verify_claim
+            explanation = (gemini.get("short_explanation") or "").strip()
+            if not explanation and evidence.get("rationale"):
+                explanation = evidence.get("rationale", "").strip()
+            if not explanation:
+                explanation = f"Verdict: {final_verdict}. Score: {final_breakdown.final_score}/100 based on evidence."
+
             final_claim = FinalClaim(
                 claim_id=claim_id,
                 claim_text=claim["claim_text"],
                 start_time=claim.get("start_time"),
                 end_time=claim.get("end_time"),
                 claim_type=claim["claim_type"],
-                final_verdict=final_verdict,  # From score mapping ONLY
+                final_verdict=final_verdict,  # From Backboard SDK only
                 fact_score=final_breakdown.final_score,
                 breakdown=final_breakdown,
-                explanation=gemini.get("short_explanation", ""),
-                sources=[Source(**s) for s in evidence.get("sources", [])]
+                explanation=explanation,
+                sources=[Source(**s) for s in evidence.get("sources", [])],
+                backboard_verdict=evidence.get("backboard_verdict"),
+                backboard_confidence=evidence.get("backboard_confidence"),
             )
             
             debug_log(job_id, f"STAGE 5.{idx} SUCCESS", "Claim finalized", {
@@ -511,10 +449,11 @@ async def stage_5_finalize_scoring(job_id: str) -> None:
             print(f"Error finalizing claim {claim_id}: {str(e)}")
             continue
     
-    # Build final result
+    # Build final result (include full transcript so frontend can show TwelveLabs output)
     final_result = {
         "job_id": job_id,
         "input_type": data["type"],
+        "transcript_text": data.get("text") or "",
         "timestamps": data.get("timestamps"),
         "claims": final_claims,
         "processing_time": None,  # TODO: Calculate if needed

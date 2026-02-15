@@ -164,41 +164,31 @@ export default function Settings({ isOpen, onClose, onLoadDemo, onJobCreated }: 
       
       {/* Modal */}
       <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
-          {/* Header */}
+        <div className="bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl max-w-md w-full p-6">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-2xl font-bold text-gray-900">Settings</h2>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 text-2xl"
-            >
+            <h2 className="text-2xl font-bold text-white">Settings</h2>
+            <button onClick={onClose} className="text-slate-400 hover:text-white text-2xl">
               ×
             </button>
           </div>
 
-          {/* Settings Content */}
           <div className="space-y-6">
-            {/* Gemini Toggle */}
             <div>
               <label className="flex items-center justify-between cursor-pointer">
                 <div>
-                  <div className="font-medium text-gray-900">Use Gemini Scoring</div>
-                  <div className="text-sm text-gray-500">
-                    Enable AI-powered detailed claim analysis
-                  </div>
+                  <div className="font-medium text-slate-200">Use Gemini Scoring</div>
+                  <div className="text-sm text-slate-500">Enable AI-powered detailed claim analysis</div>
                 </div>
                 <div className="relative">
                   <input
                     type="checkbox"
                     checked={settings.gemini_enabled}
-                    onChange={(e) =>
-                      setSettings({ ...settings, gemini_enabled: e.target.checked })
-                    }
+                    onChange={(e) => setSettings({ ...settings, gemini_enabled: e.target.checked })}
                     className="sr-only"
                   />
                   <div
                     className={`w-14 h-8 rounded-full transition-colors ${
-                      settings.gemini_enabled ? "bg-blue-600" : "bg-gray-300"
+                      settings.gemini_enabled ? "bg-blue-600" : "bg-slate-600"
                     }`}
                   >
                     <div
@@ -210,17 +200,14 @@ export default function Settings({ isOpen, onClose, onLoadDemo, onJobCreated }: 
                 </div>
               </label>
               {settings.gemini_enabled && (
-                <div className="mt-2 text-xs text-amber-600 bg-amber-50 p-2 rounded">
+                <div className="mt-2 text-xs text-amber-400 bg-amber-900/30 p-2 rounded border border-amber-700">
                   ⚠️ Requires Gemini API quota. Falls back to Backboard if unavailable.
                 </div>
               )}
             </div>
 
-            {/* Demo Mode Selector */}
             <div>
-              <label className="block font-medium text-gray-900 mb-2">
-                Demo Mode
-              </label>
+              <label className="block font-medium text-slate-200 mb-2">Demo Mode</label>
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
@@ -228,7 +215,7 @@ export default function Settings({ isOpen, onClose, onLoadDemo, onJobCreated }: 
                   className={`px-4 py-3 rounded-lg font-medium transition-colors ${
                     settings.demo_mode === "cached"
                       ? "bg-purple-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      : "bg-slate-700 text-slate-300 hover:bg-slate-600"
                   }`}
                 >
                   <div className="text-sm">⚡ Cached</div>
@@ -240,14 +227,14 @@ export default function Settings({ isOpen, onClose, onLoadDemo, onJobCreated }: 
                   className={`px-4 py-3 rounded-lg font-medium transition-colors ${
                     settings.demo_mode === "live"
                       ? "bg-green-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      : "bg-slate-700 text-slate-300 hover:bg-slate-600"
                   }`}
                 >
                   <div className="text-sm">🔴 Live</div>
                   <div className="text-xs opacity-80">Real APIs</div>
                 </button>
               </div>
-              <div className="mt-2 text-xs text-gray-500">
+              <div className="mt-2 text-xs text-slate-500">
                 {settings.demo_mode === "cached"
                   ? "Demo loads instantly from cache (no API calls)"
                   : "Demo runs through full pipeline with real APIs"}
@@ -255,8 +242,7 @@ export default function Settings({ isOpen, onClose, onLoadDemo, onJobCreated }: 
             </div>
           </div>
 
-          {/* Demo Button */}
-          <div className="mt-6 pt-6 border-t border-gray-200">
+          <div className="mt-6 pt-6 border-t border-slate-700">
             <button
               onClick={handleLoadDemo}
               disabled={demoLoading || !onLoadDemo}
@@ -264,36 +250,31 @@ export default function Settings({ isOpen, onClose, onLoadDemo, onJobCreated }: 
                 settings.demo_mode === "cached"
                   ? "bg-purple-600 hover:bg-purple-700 text-white"
                   : "bg-green-600 hover:bg-green-700 text-white"
-              } disabled:bg-gray-400 disabled:cursor-not-allowed`}
+              } disabled:bg-slate-600 disabled:cursor-not-allowed`}
             >
               <span>{settings.demo_mode === "cached" ? "⚡" : "🔴"}</span>
               <span>
-                {demoLoading 
-                  ? "Loading..." 
-                  : settings.demo_mode === "cached" 
-                    ? "Load Demo (Instant)" 
+                {demoLoading
+                  ? "Loading..."
+                  : settings.demo_mode === "cached"
+                    ? "Load Demo (Instant)"
                     : "Run Live Demo"}
               </span>
             </button>
-            {demoStatus && (
-              <div className="mt-2 text-sm text-center text-gray-600">
-                {demoStatus}
-              </div>
-            )}
+            {demoStatus && <div className="mt-2 text-sm text-center text-slate-400">{demoStatus}</div>}
           </div>
 
-          {/* Save Button */}
           <div className="mt-6 flex gap-3">
             <button
               onClick={saveSettings}
               disabled={loading}
-              className="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+              className="flex-1 bg-slate-700 text-white py-3 px-6 rounded-lg font-semibold hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed transition-colors border border-slate-600"
             >
               {loading ? "Saving..." : saved ? "✓ Saved!" : "Save Settings"}
             </button>
             <button
               onClick={onClose}
-              className="px-6 py-3 rounded-lg font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+              className="px-6 py-3 rounded-lg font-semibold bg-slate-700 text-slate-200 hover:bg-slate-600 transition-colors border border-slate-600"
             >
               Close
             </button>

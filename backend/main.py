@@ -8,7 +8,7 @@ import os
 from datetime import datetime
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from typing import Optional
 
 from config import settings
@@ -99,15 +99,14 @@ async def ingest(
             if file.size and file.size > settings.MAX_FILE_SIZE:
                 raise HTTPException(413, "File too large")
             
-            # Save file
-            file_ext = os.path.splitext(file.filename)[1]
+            # Save file (use absolute path so pipeline finds it regardless of cwd)
+            file_ext = os.path.splitext(file.filename or "")[1] or ".bin"
             file_path = os.path.join(settings.UPLOAD_DIR, f"{job_id}{file_ext}")
-            
-            with open(file_path, "wb") as f:
+            abs_path = os.path.abspath(file_path)
+            with open(abs_path, "wb") as f:
                 content_bytes = await file.read()
                 f.write(content_bytes)
-            
-            raw_input = file_path
+            raw_input = abs_path
         
         elif type in ["text", "url", "txt"]:
             # Content string required
@@ -256,6 +255,27 @@ async def get_result(job_id: str):
         raise
     except Exception as e:
         raise HTTPException(500, f"Result fetch failed: {str(e)}")
+
+
+# ============================================================================
+# GET /video (serve uploaded video for preview)
+# ============================================================================
+
+@app.get("/video")
+async def get_video(job_id: str):
+    """Serve the uploaded video file for a job (for preview when input_type is video)."""
+    try:
+        input_type = cache.get_job_data(job_id, "type")
+        if input_type != "video":
+            raise HTTPException(400, "No video for this job")
+        raw = cache.get_job_data(job_id, "raw")
+        if not raw or not isinstance(raw, str) or not os.path.isfile(raw):
+            raise HTTPException(404, "Video file not found")
+        return FileResponse(raw, media_type="video/mp4", filename=os.path.basename(raw))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"Video fetch failed: {str(e)}")
 
 
 # ============================================================================
@@ -601,10 +621,11 @@ A new archaeological discovery in Egypt claims to have found a 4,500-year-old py
         )
     ]
     
-    # Build final result
+    # Build final result (include transcript so UI can show flow: transcript → claims → research → verdict)
     final_result = {
         "job_id": demo_job_id,
         "input_type": "text",
+        "transcript_text": demo_text,
         "timestamps": None,
         "claims": [claim.model_dump() for claim in demo_claims],
         "processing_time": None,

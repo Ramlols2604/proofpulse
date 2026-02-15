@@ -1,6 +1,7 @@
 """TwelveLabs API integration for video transcription and analysis.
 
-Documentation: https://docs.twelvelabs.io/
+Documentation: https://docs.twelvelabs.io/sdk-reference/python/
+Uses client.indexes, client.tasks, and client.indexes.videos (SDK 1.x).
 """
 import asyncio
 from twelvelabs import TwelveLabs
@@ -8,162 +9,139 @@ from config import settings
 from typing import Optional
 import time
 
+# SDK 1.x: indexes.create(index_name=..., models=[IndexesCreateRequestModelsItem(...)])
+try:
+    from twelvelabs.indexes import IndexesCreateRequestModelsItem
+except ImportError:
+    try:
+        from twelvelabs.indexes.types import IndexesCreateRequestModelsItem
+    except ImportError:
+        IndexesCreateRequestModelsItem = None
+
 
 async def upload_and_transcribe(video_path: str) -> dict:
     """
     Upload video to TwelveLabs and get transcript with timestamps.
-    
+
     Args:
         video_path: Path to the uploaded video file
-    
+
     Returns:
         {
-            "normalized_text": str,  # Full transcript text
-            "timestamps": [
-                {"start": float, "end": float, "text": str},
-                ...
-            ]
+            "normalized_text": str,
+            "timestamps": [{"start": float, "end": float, "text": str}, ...]
         }
-    
-    Raises:
-        Exception: If video processing fails or times out
     """
     try:
-        # Initialize TwelveLabs client
         client = TwelveLabs(api_key=settings.TWELVELABS_API_KEY)
-        
+        if not settings.TWELVELABS_API_KEY:
+            raise ValueError("TWELVELABS_API_KEY is not set")
+
         print(f"[TwelveLabs] Starting video upload: {video_path}")
-        
-        # Step 1: Create or get index
-        # Note: Using a default index name. In production, you might want to configure this.
+
+        # Step 1: Create or get index (SDK uses indexes, not index)
         index_name = "proofpulse-videos"
-        
-        # Try to find existing index
-        indexes = client.index.list()
         index = None
+
+        def list_indexes():
+            # client.indexes.list() may return a pager or list
+            raw = client.indexes.list()
+            if hasattr(raw, "data"):
+                return raw.data or []
+            if hasattr(raw, "items"):
+                return list(raw.items) if raw.items else []
+            return list(raw) if raw else []
+
+        indexes = await asyncio.get_event_loop().run_in_executor(None, list_indexes)
         for idx in indexes:
-            if idx.name == index_name:
+            name = getattr(idx, "name", None) or getattr(idx, "index_name", None)
+            if name == index_name:
                 index = idx
                 break
-        
-        # Create index if it doesn't exist
+
         if not index:
             print(f"[TwelveLabs] Creating new index: {index_name}")
-            index = client.index.create(
-                name=index_name,
-                engines=[
-                    {
-                        "name": "marengo2.6",
-                        "options": ["visual", "conversation", "text_in_video", "logo"]
-                    }
-                ]
-            )
+
+            def create_index():
+                if IndexesCreateRequestModelsItem is not None:
+                    return client.indexes.create(
+                        index_name=index_name,
+                        models=[
+                            IndexesCreateRequestModelsItem(
+                                model_name="pegasus1.2",
+                                model_options=["visual", "audio"],
+                            )
+                        ],
+                    )
+                raise ValueError(
+                    "TwelveLabs SDK index create requires IndexesCreateRequestModelsItem. "
+                    "Install/upgrade: pip install twelvelabs>=1.0"
+                )
+
+            index = await asyncio.get_event_loop().run_in_executor(None, create_index)
             print(f"[TwelveLabs] Index created with ID: {index.id}")
         else:
             print(f"[TwelveLabs] Using existing index: {index.id}")
-        
-        # Step 2: Upload video
+
+        # Step 2: Upload video (SDK uses tasks.create with video_file or video_url)
         print(f"[TwelveLabs] Uploading video to index {index.id}")
-        task = client.task.create(
-            index_id=index.id,
-            file=video_path,
-            language="en"
-        )
-        
+
+        def create_task():
+            with open(video_path, "rb") as f:
+                return client.tasks.create(index_id=index.id, video_file=f)
+
+        task = await asyncio.get_event_loop().run_in_executor(None, create_task)
         print(f"[TwelveLabs] Upload task created: {task.id}")
-        
-        # Step 3: Wait for indexing to complete (with timeout)
-        max_wait_time = 300  # 5 minutes max
-        start_time = time.time()
-        
-        def check_status():
-            """Synchronous status check"""
-            return client.task.retrieve(task.id)
-        
-        while True:
-            # Run sync function in executor to avoid blocking
-            loop = asyncio.get_event_loop()
-            task_status = await loop.run_in_executor(None, check_status)
-            
-            status = task_status.status
-            print(f"[TwelveLabs] Task status: {status}")
-            
-            if status == "ready":
-                video_id = task_status.video_id
-                print(f"[TwelveLabs] Video indexed successfully: {video_id}")
-                break
-            elif status == "failed":
-                raise Exception(f"TwelveLabs indexing failed: {task_status}")
-            
-            # Check timeout
-            elapsed = time.time() - start_time
-            if elapsed > max_wait_time:
-                raise TimeoutError(f"Video indexing timed out after {max_wait_time}s")
-            
-            # Wait before next check
-            await asyncio.sleep(5)
-        
-        # Step 4: Retrieve video with transcription
+
+        # Step 3: Wait for indexing (use SDK wait_for_done if available, else poll)
+        def wait_task():
+            if hasattr(client.tasks, "wait_for_done"):
+                return client.tasks.wait_for_done(task_id=task.id, sleep_interval=5.0)
+            # Manual poll
+            for _ in range(60):
+                t = client.tasks.retrieve(task_id=task.id)
+                if t.status == "ready":
+                    return t
+                if t.status == "failed":
+                    raise RuntimeError(f"Indexing failed: {t.status}")
+                time.sleep(5)
+            raise TimeoutError("Video indexing timed out")
+
+        task_status = await asyncio.get_event_loop().run_in_executor(None, wait_task)
+        video_id = task_status.video_id
+        print(f"[TwelveLabs] Video indexed successfully: {video_id}")
+
+        # Step 4: Retrieve video with transcription (SDK: indexes.videos.retrieve)
         print(f"[TwelveLabs] Fetching transcript for video {video_id}")
-        
+
         def get_video():
-            """Synchronous video retrieval"""
-            return client.index.video.retrieve(
+            return client.indexes.videos.retrieve(
                 index_id=index.id,
-                id=video_id,
-                transcription=True
+                video_id=video_id,
+                transcription=True,
             )
-        
-        video = await loop.run_in_executor(None, get_video)
-        
-        # Step 5: Format transcript
+
+        video = await asyncio.get_event_loop().run_in_executor(None, get_video)
+
+        # Step 5: Format transcript (SDK segments use .start, .end, .value)
         normalized_text = ""
         timestamps = []
-        
-        print(f"[TwelveLabs] Video object: {video}")
-        print(f"[TwelveLabs] Has transcription: {hasattr(video, 'transcription')}")
-        
-        if hasattr(video, 'transcription') and video.transcription:
-            print(f"[TwelveLabs] Transcription type: {type(video.transcription)}")
-            print(f"[TwelveLabs] Transcription content: {video.transcription}")
-            
-            # Handle different possible formats
-            segments = None
-            if hasattr(video.transcription, 'segments'):
-                segments = video.transcription.segments
-            elif isinstance(video.transcription, list):
-                segments = video.transcription
-            elif hasattr(video.transcription, '__iter__'):
-                segments = list(video.transcription)
-            
-            print(f"[TwelveLabs] Segments found: {segments is not None}, count: {len(segments) if segments else 0}")
-            
-            if segments:
-                for idx, segment in enumerate(segments):
-                    print(f"[TwelveLabs] Segment {idx}: {segment}")
-                    # Try different attribute names
-                    text = None
-                    if hasattr(segment, 'text'):
-                        text = segment.text
-                    elif hasattr(segment, 'value'):
-                        text = segment.value
-                    elif isinstance(segment, dict):
-                        text = segment.get('text') or segment.get('value')
-                    
-                    start = getattr(segment, 'start', 0.0) if hasattr(segment, 'start') else segment.get('start', 0.0) if isinstance(segment, dict) else 0.0
-                    end = getattr(segment, 'end', 0.0) if hasattr(segment, 'end') else segment.get('end', 0.0) if isinstance(segment, dict) else 0.0
-                    
-                    if text:
-                        normalized_text += text + " "
-                        timestamps.append({
-                            "start": start,
-                            "end": end,
-                            "text": text
-                        })
-                        print(f"[TwelveLabs] Added segment: {start}-{end}s: {text[:50]}...")
-        
+
+        if hasattr(video, "transcription") and video.transcription:
+            segments = list(video.transcription) if video.transcription else []
+            print(f"[TwelveLabs] Segments found: {len(segments)}")
+
+            for segment in segments:
+                text = getattr(segment, "value", None) or getattr(segment, "text", None)
+                if isinstance(segment, dict):
+                    text = segment.get("value") or segment.get("text")
+                start = getattr(segment, "start", 0.0) or (segment.get("start", 0.0) if isinstance(segment, dict) else 0.0)
+                end = getattr(segment, "end", 0.0) or (segment.get("end", 0.0) if isinstance(segment, dict) else 0.0)
+                if text:
+                    normalized_text += text + " "
+                    timestamps.append({"start": start, "end": end, "text": text})
+
         normalized_text = normalized_text.strip()
-        
         print(f"[TwelveLabs] Final transcript length: {len(normalized_text)} chars")
         print(f"[TwelveLabs] Transcript preview: {normalized_text[:200]}...")
         

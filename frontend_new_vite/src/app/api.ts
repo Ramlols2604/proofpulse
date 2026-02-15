@@ -1,6 +1,7 @@
 import type { VideoData, Claim, TranscriptSegment } from './types';
 
-const API_BASE = 'http://localhost:8000';
+// Use /api in dev (Vite proxy to backend) or env override
+const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
 // Generate or retrieve client ID
 function getClientId(): string {
@@ -19,16 +20,24 @@ async function apiCall(endpoint: string, options: RequestInit = {}) {
     'x-client-id': getClientId(),
     ...options.headers,
   };
-  
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers,
-  });
-  
-  if (!response.ok) {
-    throw new Error(`API error: ${response.statusText}`);
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${endpoint}`, {
+      ...options,
+      headers,
+    });
+  } catch (err) {
+    const message = err instanceof TypeError && err.message.includes('fetch')
+      ? 'Cannot reach the backend. Is it running on port 8000?'
+      : (err instanceof Error ? err.message : 'Network error');
+    throw new Error(message);
   }
-  
+
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status} ${response.statusText}`);
+  }
+
   return response.json();
 }
 
@@ -63,6 +72,8 @@ function transformClaim(backendClaim: any): Claim {
       })),
     },
     breakdown: backendClaim.breakdown,
+    backboardVerdict: backendClaim.backboard_verdict,
+    backboardConfidence: backendClaim.backboard_confidence,
   };
   
   console.log('[transformClaim] Output:', claim);
@@ -72,36 +83,55 @@ function transformClaim(backendClaim: any): Claim {
 // Transform backend response to VideoData format
 function transformBackendResponse(backendResult: any): VideoData {
   console.log('[transformBackendResponse] Input:', backendResult);
-  
+
   const claims = (backendResult.claims || []).map(transformClaim);
-  
-  // Calculate credibility score (average of all claim scores)
-  const avgScore = claims.length > 0 
+  const transcriptText = backendResult.transcript_text ?? '';
+
+  // Build transcript segments: prefer backend timestamps (TwelveLabs), else from claims
+  let transcript: TranscriptSegment[] = [];
+  const rawTimestamps = backendResult.timestamps;
+  if (Array.isArray(rawTimestamps) && rawTimestamps.length > 0) {
+    transcript = rawTimestamps.map((seg: { start?: number; end?: number; text?: string }, i: number) => ({
+      id: String(i + 1),
+      text: seg.text ?? '',
+      startTime: seg.start ?? 0,
+      endTime: seg.end ?? 0,
+    })).filter((s: TranscriptSegment) => s.text);
+  }
+  if (transcript.length === 0 && claims.length > 0) {
+    transcript = claims
+      .filter(c => c.timestamp != null && c.timestamp !== 0)
+      .map(c => ({
+        id: c.id,
+        text: c.text,
+        startTime: c.timestamp,
+        endTime: c.endTime ?? c.timestamp + 10,
+      }));
+  }
+
+  const avgScore = claims.length > 0
     ? Math.round(claims.reduce((sum, c) => sum + c.confidence, 0) / claims.length)
     : 0;
-  
-  // Generate transcript from claims if available
-  const transcript: TranscriptSegment[] = claims
-    .filter(c => c.timestamp !== null && c.timestamp !== 0)
-    .map(c => ({
-      id: c.id,
-      text: c.text,
-      startTime: c.timestamp,
-      endTime: c.endTime || c.timestamp + 10,
-    }));
-  
-  const result = {
-    title: `Analysis Results (${backendResult.input_type})`,
+
+  const inputType = backendResult.input_type;
+  const jobId = backendResult.job_id;
+  const videoUrl =
+    inputType === 'video' && jobId
+      ? `${API_BASE}/video?job_id=${encodeURIComponent(jobId)}`
+      : undefined;
+
+  const result: VideoData = {
+    title: `Analysis Results (${inputType})`,
     credibilityScore: avgScore,
-    aiScore: 0, // Not provided by backend yet
+    aiScore: 0,
+    transcriptText: transcriptText || undefined,
     transcript,
     claims,
+    videoUrl,
+    jobId: backendResult.job_id,
   };
-  
+
   console.log('[transformBackendResponse] Output:', result);
-  console.log('[transformBackendResponse] Claims count:', claims.length);
-  console.log('[transformBackendResponse] Credibility score:', avgScore);
-  
   return result;
 }
 

@@ -36,67 +36,60 @@ export function TranscriptViewer({
     }
   }, [activeClaimId]);
 
-  // Helper to find matching claim for a segment
-  const getClaimForSegment = (segment: TranscriptSegment) => {
-    return claims.find(claim => 
-      claim.timestamp >= segment.startTime && 
-      (claim.endTime ? claim.endTime : claim.timestamp + 5) <= segment.endTime + 5 // Fuzzy match
-    );
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#1E293B] rounded-xl border border-slate-700 overflow-hidden">
-      <div className="p-4 border-b border-slate-700 bg-slate-800/50 flex justify-between items-center sticky top-0 z-10 backdrop-blur-sm">
-        <h3 className="font-semibold text-slate-200">Transcript</h3>
-        <span className="text-xs text-slate-400 font-mono">
-           Auto-generated
-        </span>
+    <div className="flex flex-col h-full bg-card rounded-xl border border-border overflow-hidden">
+      <div className="p-4 border-b border-border bg-accent/30 flex justify-between items-center sticky top-0 z-10 backdrop-blur-sm">
+        <h3 className="font-semibold text-foreground">Transcript with timestamps</h3>
+        <span className="text-xs text-muted-foreground font-mono">Click time to seek</span>
       </div>
       
-      <div 
+      <div
         ref={containerRef}
-        className="flex-1 overflow-y-auto p-6 space-y-1 font-serif text-slate-300 leading-relaxed custom-scrollbar relative"
+        className="flex-1 overflow-y-auto p-4 space-y-2 text-foreground leading-relaxed custom-scrollbar"
       >
-        {transcript.map((segment) => {
-          const isActiveTime = currentTime >= segment.startTime && currentTime < segment.endTime;
-          const matchingClaim = claims.find(c => 
-            // Check if claim overlaps with this segment
-            (c.timestamp >= segment.startTime && c.timestamp < segment.endTime) ||
-            (c.endTime && c.endTime > segment.startTime && c.endTime <= segment.endTime)
-          );
-          
-          const isContradicted = matchingClaim?.verdict === 'contradicted';
-          const isUnclear = matchingClaim?.verdict === 'unclear';
-          const isActiveClaim = matchingClaim?.id === activeClaimId;
+        {transcript.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No timestamped segments.</p>
+        ) : (
+          transcript.map((segment) => {
+            const isActiveTime = currentTime >= segment.startTime && currentTime < segment.endTime;
+            const matchingClaim = claims.find(c =>
+              (c.timestamp >= segment.startTime && c.timestamp < segment.endTime) ||
+              (c.endTime && c.endTime > segment.startTime && c.endTime <= segment.endTime)
+            );
+            const isContradicted = matchingClaim?.verdict === 'contradicted';
+            const isUnclear = matchingClaim?.verdict === 'unclear';
+            const isActiveClaim = matchingClaim?.id === activeClaimId;
 
-          let className = "inline px-1 py-0.5 rounded cursor-pointer transition-colors duration-200 ";
-          
-          if (isActiveTime) {
-            className += "bg-blue-500/20 text-blue-200 ";
-          } else if (isContradicted) {
-             className += "bg-red-500/20 text-red-200 border-b-2 border-red-500/50 ";
-          } else if (isUnclear) {
-             className += "bg-amber-500/10 text-amber-200 border-b-2 border-amber-500/50 ";
-          } else {
-            className += "hover:bg-slate-700/50 ";
-          }
+            let blockClass = "flex gap-3 rounded-lg px-3 py-2 cursor-pointer transition-colors ";
+            if (isActiveTime) blockClass += "bg-primary/20 text-foreground ";
+            else if (isContradicted) blockClass += "bg-red-500/10 text-foreground border-l-2 border-red-500 ";
+            else if (isUnclear) blockClass += "bg-amber-500/10 text-foreground border-l-2 border-amber-500 ";
+            else blockClass += "hover:bg-accent/50 ";
+            if (isActiveClaim) blockClass += "ring-2 ring-primary ring-offset-2 ring-offset-background ";
 
-          if (isActiveClaim) {
-             className += "ring-2 ring-blue-500 ring-offset-2 ring-offset-slate-900 ";
-          }
-
-          return (
-            <span
-              key={segment.id}
-              ref={isActiveClaim ? activeSegmentRef : null}
-              className={className}
-              onClick={() => onTimeSelect(segment.startTime)}
-              title={matchingClaim ? `Claim: ${matchingClaim.verdict.toUpperCase()}` : undefined}
-            >
-              {segment.text}{" "}
-            </span>
-          );
-        })}
+            const timeLabel = `${formatTime(segment.startTime)} – ${formatTime(segment.endTime)}`;
+            return (
+              <div
+                key={segment.id}
+                ref={isActiveClaim ? activeSegmentRef : null}
+                className={blockClass}
+                onClick={() => onTimeSelect(segment.startTime)}
+                title={matchingClaim ? `Claim: ${matchingClaim.verdict}` : `Seek to ${timeLabel}`}
+              >
+                <span className="shrink-0 font-mono text-xs text-muted-foreground min-w-[64px]">
+                  {timeLabel}
+                </span>
+                <span className="flex-1">{segment.text}</span>
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );

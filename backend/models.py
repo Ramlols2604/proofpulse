@@ -115,7 +115,7 @@ class FinalBreakdown(BaseModel):
 
 
 class FinalClaim(BaseModel):
-    """Final claim with complete analysis."""
+    """Final claim with complete analysis (verdict and explanation use Backboard + Gemini)."""
     claim_id: str
     claim_text: str
     start_time: Optional[float] = None
@@ -124,8 +124,11 @@ class FinalClaim(BaseModel):
     final_verdict: Literal["SUPPORTED", "MOSTLY_SUPPORTED", "UNCLEAR", "MOSTLY_CONTRADICTED", "CONTRADICTED"]
     fact_score: int = Field(ge=0, le=100)
     breakdown: FinalBreakdown
-    explanation: str
+    explanation: str  # From Gemini short_explanation or Backboard rationale
     sources: list[Source]
+    # Backboard SDK verdict/confidence from verify_claim (for transparency)
+    backboard_verdict: Optional[str] = None
+    backboard_confidence: Optional[int] = None
 
 
 class ResultResponse(BaseModel):

@@ -59,11 +59,28 @@ export function ProcessingScreen2({
   useEffect(() => {
     const process = async () => {
       try {
-        console.log('[ProcessingScreen2] Starting process with:', { text, url, file, demoData });
+        console.log('[ProcessingScreen2] Starting process with:', { text, url, file: file?.name, hasDemoData: !!demoData });
         
-        // If we have preloaded demo data, just show the steps and complete
-        if (demoData) {
-          console.log('[ProcessingScreen2] Using demo data');
+        // Prefer real input over demo: only use demo when there is no file/text/url
+        let jobId: string;
+        
+        if (file) {
+          console.log('[ProcessingScreen2] Submitting file for analysis:', file.name);
+          setStatusMessage("Uploading file for analysis...");
+          jobId = await submitFileForAnalysis(file);
+          console.log('[ProcessingScreen2] Got job ID:', jobId);
+        } else if (text) {
+          console.log('[ProcessingScreen2] Submitting text:', text.slice(0, 50) + '...');
+          setStatusMessage("Submitting text for analysis...");
+          jobId = await submitTextForAnalysis(text);
+          console.log('[ProcessingScreen2] Got job ID:', jobId);
+        } else if (url) {
+          console.log('[ProcessingScreen2] Submitting URL:', url);
+          setStatusMessage("Submitting URL for analysis...");
+          jobId = await submitUrlForAnalysis(url);
+          console.log('[ProcessingScreen2] Got job ID:', jobId);
+        } else if (demoData) {
+          console.log('[ProcessingScreen2] Using preloaded demo data (no file/text/url)');
           const timer = setInterval(() => {
             setCurrentStep(prev => {
               if (prev < steps.length - 1) {
@@ -77,26 +94,6 @@ export function ProcessingScreen2({
             });
           }, 600);
           return () => clearInterval(timer);
-        }
-
-        // Submit to backend based on input type
-        let jobId: string;
-        
-        if (text) {
-          console.log('[ProcessingScreen2] Submitting text:', text);
-          setStatusMessage("Submitting text for analysis...");
-          jobId = await submitTextForAnalysis(text);
-          console.log('[ProcessingScreen2] Got job ID:', jobId);
-        } else if (url) {
-          console.log('[ProcessingScreen2] Submitting URL:', url);
-          setStatusMessage("Submitting URL for analysis...");
-          jobId = await submitUrlForAnalysis(url);
-          console.log('[ProcessingScreen2] Got job ID:', jobId);
-        } else if (file) {
-          console.log('[ProcessingScreen2] Submitting file:', file.name);
-          setStatusMessage("Uploading file for analysis...");
-          jobId = await submitFileForAnalysis(file);
-          console.log('[ProcessingScreen2] Got job ID:', jobId);
         } else {
           console.error('[ProcessingScreen2] No input provided!');
           throw new Error("No input provided");
@@ -150,41 +147,40 @@ export function ProcessingScreen2({
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-[#0F172A] text-slate-50 px-4">
-      <motion.div 
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 text-gray-900 px-4">
+      <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="flex flex-col items-center space-y-8 text-center"
+        className="bg-white rounded-2xl shadow-xl p-8 flex flex-col items-center space-y-8 text-center max-w-md"
       >
         <div className="relative">
-          <Spinner size="xl" className="text-blue-500" />
-          <motion.div 
-            className="absolute inset-0 flex items-center justify-center text-xs font-mono text-blue-300"
+          <Spinner size="xl" className="text-blue-600" />
+          <motion.div
+            className="absolute inset-0 flex items-center justify-center text-xs font-mono text-blue-600"
             animate={{ opacity: [0.5, 1, 0.5] }}
             transition={{ repeat: Infinity, duration: 2 }}
           >
             {Math.min((currentStep + 1) * Math.floor(100 / steps.length), 99)}%
           </motion.div>
         </div>
-        
+
         <div className="space-y-2 min-h-24">
-          <h2 className="text-2xl font-semibold tracking-tight">{getTitle()}</h2>
-          <motion.p 
+          <h2 className="text-2xl font-semibold tracking-tight text-gray-900">{getTitle()}</h2>
+          <motion.p
             key={statusMessage}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="text-slate-400 font-mono text-sm"
+            className="text-gray-600 font-mono text-sm"
           >
             {statusMessage}
           </motion.p>
         </div>
 
-        {/* Progress bar */}
-        <div className="w-64 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-          <motion.div 
-            className="h-full bg-blue-500"
-            initial={{ width: "0%" }}
+        <div className="w-64 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+          <motion.div
+            className="h-full bg-blue-600"
+            initial={{ width: '0%' }}
             animate={{ width: `${((currentStep + 1) / steps.length) * 100}%` }}
             transition={{ duration: 0.5 }}
           />
